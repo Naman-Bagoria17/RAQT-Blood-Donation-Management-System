@@ -61,22 +61,51 @@ const Register = () => {
     const errs = validate();
     if (Object.keys(errs).length) { setErrors(errs); return; }
     setLoading(true);
-    try {
+    const performRegister = async (lat = null, lon = null) => {
       const payload = {
         name: form.name.trim(),
         email: form.email.trim().toLowerCase(),
         password: form.password,
         role: form.role,
         contact: form.contact || undefined,
+        latitude: lat,
+        longitude: lon,
         ...(form.role === 'donor' ? { blood_group: form.blood_group } : { hospital_name: form.hospital_name.trim() }),
       };
       const data = await register(payload);
       toast.success(`Account created! Welcome, ${data.user.name}`);
       navigate(form.role === 'donor' ? '/donor/dashboard' : '/doctor/dashboard', { replace: true });
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Registration failed. Please try again.');
-    } finally {
-      setLoading(false);
+    };
+
+    if (form.role === 'donor') {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          async (pos) => {
+            try {
+              await performRegister(pos.coords.latitude, pos.coords.longitude);
+            } catch (err) {
+              toast.error(err.response?.data?.message || 'Registration failed. Please try again.');
+            } finally {
+              setLoading(false);
+            }
+          },
+          (error) => {
+            alert("Location access is mandatory for donors. Please enable it in your browser settings to proceed.");
+            setLoading(false);
+          }
+        );
+      } else {
+        alert("Geolocation is not supported by your browser.");
+        setLoading(false);
+      }
+    } else {
+      try {
+        await performRegister();
+      } catch (err) {
+        toast.error(err.response?.data?.message || 'Registration failed. Please try again.');
+      } finally {
+        setLoading(false);
+      }
     }
   };
 

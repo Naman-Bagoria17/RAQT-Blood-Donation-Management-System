@@ -2,6 +2,11 @@ const mongoose = require('mongoose');
 
 const bloodRequestSchema = new mongoose.Schema(
   {
+    requestId: {
+      type: String,
+      unique: true,
+      required: true,
+    },
     requester: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User', // Usually a Doctor, but keeping it flexible
@@ -28,8 +33,13 @@ const bloodRequestSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['OPEN', 'IN_PROGRESS', 'CLOSED'],
+      enum: ['OPEN', 'IN_PROGRESS', 'CLOSED', 'REVOKED'],
       default: 'OPEN',
+    },
+    selected_donor: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
     },
   },
   { timestamps: true }

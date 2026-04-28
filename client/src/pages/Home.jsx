@@ -118,7 +118,7 @@ const Home = () => {
       </section>
 
       {/* ── How it works ──────────────────────────────────────── */}
-      <section className="section" style={{ borderTop: '1px solid var(--border-1)' }}>
+      <section id="how-it-works" className="section" style={{ borderTop: '1px solid var(--border-1)' }}>
         <div className="container">
           <div className="section-header">
             <p className="label">How it works</p>
@@ -168,7 +168,7 @@ const Home = () => {
       </section>
 
       {/* ── Blood Types ───────────────────────────────────────── */}
-      <section className="section-sm blood-types-section">
+      <section id="blood-types" className="section-sm blood-types-section">
         <div className="container">
           <div className="section-header" style={{ marginBottom: 'var(--space-8)' }}>
             <p className="label">All blood groups</p>

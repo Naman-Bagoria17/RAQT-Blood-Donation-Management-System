@@ -3,11 +3,12 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { FiMail, FiLock, FiEye, FiEyeOff, FiArrowRight, FiDroplet } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
+import api from '../services/api';
 
 const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login } = useAuth();
+  const { login, logout } = useAuth();
 
   const [form, setForm] = useState({ email: '', password: '' });
   const [errors, setErrors] = useState({});
@@ -35,33 +36,48 @@ const Login = () => {
     if (Object.keys(errs).length) { setErrors(errs); return; }
     setLoading(true);
 
-    const performLogin = async (latitude = null, longitude = null) => {
-      try {
-        const data = await login(form.email, form.password, latitude, longitude);
-        toast.success(`Welcome back, ${data.user.name}`);
-        const from = location.state?.from?.pathname;
-        navigate(from || (data.user.role === 'donor' ? '/donor/dashboard' : '/doctor/dashboard'), { replace: true });
-      } catch (err) {
-        toast.error(err.response?.data?.message || 'Invalid credentials. Please try again.');
-      } finally {
-        setLoading(false);
-      }
-    };
+    try {
+      const data = await login(form.email, form.password);
+      const from = location.state?.from?.pathname;
 
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          performLogin(position.coords.latitude, position.coords.longitude);
-        },
-        (error) => {
-          console.warn('Geolocation failed or denied', error);
-          toast.info('Location access denied. Falling back to default login.');
-          performLogin();
-        },
-        { timeout: 5000 }
-      );
-    } else {
-      performLogin();
+      if (data.user.role === 'donor') {
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            async (position) => {
+              try {
+                await api.put('/location/update', {
+                  latitude: position.coords.latitude,
+                  longitude: position.coords.longitude
+                });
+                toast.success(`Welcome back, ${data.user.name}`);
+                navigate(from || '/donor/dashboard', { replace: true });
+              } catch (err) {
+                console.error('Failed to update location', err);
+                toast.success(`Welcome back, ${data.user.name}`);
+                navigate(from || '/donor/dashboard', { replace: true });
+              } finally {
+                setLoading(false);
+              }
+            },
+            async (error) => {
+              alert("Location access is mandatory for donors. Please enable it in your browser settings to proceed.");
+              await logout();
+              setLoading(false);
+            }
+          );
+        } else {
+          alert("Geolocation is not supported by your browser.");
+          await logout();
+          setLoading(false);
+        }
+      } else {
+        // Doctor login - no location needed
+        toast.success(`Welcome back, ${data.user.name}`);
+        navigate(from || '/doctor/dashboard', { replace: true });
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Invalid credentials. Please try again.');
+      setLoading(false);
     }
   };
 

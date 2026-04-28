@@ -34,7 +34,7 @@ const sendTokenResponse = (user, statusCode, res) => {
 // ─────────────────────────────────────────────────────────────
 router.post('/register', async (req, res) => {
   try {
-    const { name, email, password, role, blood_group, contact, hospital_name } = req.body;
+    const { name, email, password, role, blood_group, contact, hospital_name, latitude, longitude } = req.body;
 
     // Validate required fields
     if (!name || !email || !password || !role) {
@@ -69,6 +69,21 @@ router.post('/register', async (req, res) => {
         hospital_name: hospital_name || '',
         contact: contact || '',
       });
+    }
+
+    // Update location if provided
+    if (latitude && longitude) {
+      await Location.findOneAndUpdate(
+        { user: user._id },
+        {
+          coordinates: {
+            type: 'Point',
+            coordinates: [parseFloat(longitude), parseFloat(latitude)],
+          },
+          timestamp: Date.now(),
+        },
+        { upsert: true, new: true }
+      );
     }
 
     sendTokenResponse(user, 201, res);

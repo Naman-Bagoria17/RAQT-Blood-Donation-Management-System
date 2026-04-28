@@ -17,6 +17,7 @@ const DoctorDashboard = () => {
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('profile');
   const [requests, setRequests] = useState([]);
+  const [myRequests, setMyRequests] = useState([]);
   const [searchResults, setSearchResults] = useState([]);
   
   const [form, setForm] = useState({ name: '', hospital_name: '', contact: '' });
@@ -30,15 +31,17 @@ const DoctorDashboard = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [profileRes, reqRes] = await Promise.all([
+      const [profileRes, reqRes, myReqRes] = await Promise.all([
         api.get('/users/profile'),
-        api.get('/request/all').catch(() => ({ data: { data: [] } }))
+        api.get('/request/all').catch(() => ({ data: { data: [] } })),
+        api.get('/request/my-requests').catch(() => ({ data: { data: [] } }))
       ]);
 
       const data = profileRes.data.data;
       setProfile(data.profile);
       setUserData(data.user);
       setRequests(reqRes.data.data || []);
+      setMyRequests(myReqRes.data.data || []);
 
       setForm({
         name: data.user?.name || '',
@@ -80,7 +83,7 @@ const DoctorDashboard = () => {
       toast.success('Blood request created successfully.');
       fetchData(); // Refresh requests
       setRequestForm({ blood_group: 'O+', quantity: 1, urgency_level: 'MEDIUM' });
-      setActiveTab('requests');
+      setActiveTab('my_requests');
     } catch (err) {
       toast.error('Failed to create blood request.');
     }
@@ -105,8 +108,33 @@ const DoctorDashboard = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => setSearchForm((prev) => ({ ...prev, lat: pos.coords.latitude, lng: pos.coords.longitude })),
-        (err) => toast.error('Could not get location.')
+        (err) => {
+          alert("Location access is mandatory for searching donors. Please enable it in your browser settings.");
+          toast.error('Location access denied.');
+        }
       );
+    } else {
+      alert("Geolocation is not supported by your browser.");
+    }
+  };
+
+  const handleRevoke = async (id) => {
+    try {
+      await api.put(`/request/revoke/${id}`);
+      toast.success('Request revoked.');
+      fetchData();
+    } catch (err) {
+      toast.error('Failed to revoke request.');
+    }
+  };
+
+  const handleComplete = async (id) => {
+    try {
+      await api.put(`/request/complete/${id}`);
+      toast.success('Donation completed successfully.');
+      fetchData();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to complete donation.');
     }
   };
 
@@ -149,9 +177,11 @@ const DoctorDashboard = () => {
             </div>
           ) : (
             <>
-              <div className="dash-tabs" style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
+              <div className="dash-tabs" style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem', overflowX: 'auto' }}>
                 <button className={`btn btn-ghost ${activeTab === 'profile' ? 'active' : ''}`} onClick={() => setActiveTab('profile')}>Profile</button>
-                <button className={`btn btn-ghost ${activeTab === 'requests' ? 'active' : ''}`} onClick={() => setActiveTab('requests')}>View Requests</button>
+                <button className={`btn btn-ghost ${activeTab === 'requests' ? 'active' : ''}`} onClick={() => setActiveTab('requests')}>Global Active Requests</button>
+                <button className={`btn btn-ghost ${activeTab === 'my_requests' ? 'active' : ''}`} onClick={() => setActiveTab('my_requests')}>My Request History</button>
+                <button className={`btn btn-ghost ${activeTab === 'donor_track' ? 'active' : ''}`} onClick={() => setActiveTab('donor_track')}>Donor Action Track</button>
                 <button className={`btn btn-ghost ${activeTab === 'create_request' ? 'active' : ''}`} onClick={() => setActiveTab('create_request')}>Create Request</button>
                 <button className={`btn btn-ghost ${activeTab === 'search' ? 'active' : ''}`} onClick={() => setActiveTab('search')}>Search Donors</button>
               </div>
@@ -206,13 +236,14 @@ const DoctorDashboard = () => {
               {activeTab === 'requests' && (
                 <div className="panel">
                   <div className="panel-header">
-                    <span className="panel-title">Active Blood Requests</span>
+                    <span className="panel-title">Global Active Blood Requests</span>
                   </div>
                   <div style={{ padding: '1.5rem' }}>
                     {requests.length === 0 ? <p>No active requests.</p> : (
                       <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
                         <thead>
                           <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                            <th style={{ padding: '0.5rem' }}>ID</th>
                             <th style={{ padding: '0.5rem' }}>Blood Group</th>
                             <th style={{ padding: '0.5rem' }}>Units</th>
                             <th style={{ padding: '0.5rem' }}>Urgency</th>
@@ -223,6 +254,7 @@ const DoctorDashboard = () => {
                         <tbody>
                           {requests.map(req => (
                             <tr key={req._id} style={{ borderBottom: '1px solid var(--border)' }}>
+                              <td style={{ padding: '0.5rem', fontSize: '0.85rem' }}>{req.requestId}</td>
                               <td style={{ padding: '0.5rem', fontWeight: 'bold', color: 'var(--red)' }}>{req.blood_group}</td>
                               <td style={{ padding: '0.5rem' }}>{req.quantity}</td>
                               <td style={{ padding: '0.5rem' }}>{req.urgency_level}</td>
@@ -232,6 +264,146 @@ const DoctorDashboard = () => {
                           ))}
                         </tbody>
                       </table>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'my_requests' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                  {/* Pending Requests Section */}
+                  <div className="panel">
+                    <div className="panel-header">
+                      <span className="panel-title" style={{ color: 'var(--blue)' }}>Pending Requests</span>
+                    </div>
+                    <div style={{ padding: '1.5rem' }}>
+                      {myRequests.filter(r => r.status === 'OPEN' || r.status === 'IN_PROGRESS').length === 0 ? <p>No pending requests.</p> : (
+                        <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
+                          <thead>
+                            <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                              <th style={{ padding: '0.5rem' }}>ID</th>
+                              <th style={{ padding: '0.5rem' }}>Blood Group</th>
+                              <th style={{ padding: '0.5rem' }}>Urgency</th>
+                              <th style={{ padding: '0.5rem' }}>Status</th>
+                              <th style={{ padding: '0.5rem' }}>Date</th>
+                              <th style={{ padding: '0.5rem' }}>Action</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {myRequests.filter(r => r.status === 'OPEN' || r.status === 'IN_PROGRESS').map(req => (
+                              <tr key={req._id} style={{ borderBottom: '1px solid var(--border)' }}>
+                                <td style={{ padding: '0.5rem', fontSize: '0.85rem' }}>{req.requestId}</td>
+                                <td style={{ padding: '0.5rem', fontWeight: 'bold', color: 'var(--red)' }}>{req.blood_group}</td>
+                                <td style={{ padding: '0.5rem' }}>{req.urgency_level}</td>
+                                <td style={{ padding: '0.5rem' }}>{req.status}</td>
+                                <td style={{ padding: '0.5rem' }}>{new Date(req.request_date).toLocaleDateString()}</td>
+                                <td style={{ padding: '0.5rem' }}>
+                                  {req.status === 'OPEN' && (
+                                    <button onClick={() => handleRevoke(req._id)} className="btn btn-sm btn-outline" style={{ color: 'var(--red)', borderColor: 'var(--red)' }}>Revoke</button>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Completed Requests Section */}
+                  <div className="panel">
+                    <div className="panel-header">
+                      <span className="panel-title" style={{ color: '#10b981' }}>Completed Requests</span>
+                    </div>
+                    <div style={{ padding: '1.5rem' }}>
+                      {myRequests.filter(r => r.status === 'CLOSED').length === 0 ? <p>No completed requests.</p> : (
+                        <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
+                          <thead>
+                            <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                              <th style={{ padding: '0.5rem' }}>ID</th>
+                              <th style={{ padding: '0.5rem' }}>Blood Group</th>
+                              <th style={{ padding: '0.5rem' }}>Units</th>
+                              <th style={{ padding: '0.5rem' }}>Date</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {myRequests.filter(r => r.status === 'CLOSED').map(req => (
+                              <tr key={req._id} style={{ borderBottom: '1px solid var(--border)' }}>
+                                <td style={{ padding: '0.5rem', fontSize: '0.85rem' }}>{req.requestId}</td>
+                                <td style={{ padding: '0.5rem', fontWeight: 'bold', color: 'var(--red)' }}>{req.blood_group}</td>
+                                <td style={{ padding: '0.5rem' }}>{req.quantity}</td>
+                                <td style={{ padding: '0.5rem' }}>{new Date(req.request_date).toLocaleDateString()}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Revoked Requests Section */}
+                  <div className="panel">
+                    <div className="panel-header">
+                      <span className="panel-title" style={{ color: 'var(--red)' }}>Revoked Requests</span>
+                    </div>
+                    <div style={{ padding: '1.5rem' }}>
+                      {myRequests.filter(r => r.status === 'REVOKED').length === 0 ? <p>No revoked requests.</p> : (
+                        <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
+                          <thead>
+                            <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                              <th style={{ padding: '0.5rem' }}>ID</th>
+                              <th style={{ padding: '0.5rem' }}>Blood Group</th>
+                              <th style={{ padding: '0.5rem' }}>Date</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {myRequests.filter(r => r.status === 'REVOKED').map(req => (
+                              <tr key={req._id} style={{ borderBottom: '1px solid var(--border)' }}>
+                                <td style={{ padding: '0.5rem', fontSize: '0.85rem' }}>{req.requestId}</td>
+                                <td style={{ padding: '0.5rem', fontWeight: 'bold', color: 'var(--red)' }}>{req.blood_group}</td>
+                                <td style={{ padding: '0.5rem' }}>{new Date(req.request_date).toLocaleDateString()}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'donor_track' && (
+                <div className="panel">
+                  <div className="panel-header">
+                    <span className="panel-title">Donor Action Track</span>
+                  </div>
+                  <div style={{ padding: '1.5rem' }}>
+                    <p style={{ marginBottom: '1rem', color: 'var(--text-2)' }}>Manage requests that have an assigned donor and mark them as completed.</p>
+                    {myRequests.filter(r => r.status === 'IN_PROGRESS').length === 0 ? <p>No active requests with assigned donors.</p> : (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem' }}>
+                        {myRequests.filter(r => r.status === 'IN_PROGRESS').map(req => (
+                          <div key={req._id} style={{ padding: '1rem', border: '1px solid var(--border)', borderRadius: '8px', backgroundColor: 'var(--surface-light)' }}>
+                            <h4 style={{ margin: '0 0 0.5rem 0', display: 'flex', justifyContent: 'space-between' }}>
+                              Request {req.requestId}
+                              <span className="badge" style={{ backgroundColor: 'var(--blue)', color: 'white' }}>In Progress</span>
+                            </h4>
+                            <p style={{ margin: '0.2rem 0', fontSize: '0.9rem' }}><strong>Blood Group:</strong> <span style={{ color: 'var(--red)', fontWeight: 'bold' }}>{req.blood_group}</span></p>
+                            <p style={{ margin: '0.2rem 0', fontSize: '0.9rem' }}><strong>Urgency:</strong> {req.urgency_level}</p>
+                            <div style={{ marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px dashed var(--border)' }}>
+                              <p style={{ margin: '0.2rem 0', fontSize: '0.9rem' }}><strong>Assigned Donor:</strong></p>
+                              <p style={{ margin: '0.2rem 0', fontSize: '0.9rem' }}>{req.selected_donor?.name || 'Unknown'}</p>
+                              <p style={{ margin: '0.2rem 0', fontSize: '0.9rem', color: 'var(--text-2)' }}>{req.selected_donor?.email || ''}</p>
+                            </div>
+                            <button 
+                              className="btn btn-primary" 
+                              style={{ width: '100%', marginTop: '1rem' }}
+                              onClick={() => handleComplete(req._id)}
+                            >
+                              <FiCheck style={{ marginRight: '0.5rem' }} /> Complete Donation
+                            </button>
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -313,7 +485,7 @@ const DoctorDashboard = () => {
                                 <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                                   <select id={`req-${idx}`} className="form-input" style={{ padding: '0.25rem', fontSize: '0.8rem' }}>
                                     <option value="">Select Request context</option>
-                                    {requests.filter(r => r.status === 'OPEN').map(r => (
+                                    {requests.filter(r => r.status === 'OPEN' && r.blood_group === searchForm.blood_group).map(r => (
                                       <option key={r._id} value={r._id}>{r.blood_group} - {r.urgency_level}</option>
                                     ))}
                                   </select>

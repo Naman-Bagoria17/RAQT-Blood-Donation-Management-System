@@ -13,13 +13,15 @@ const DonorDashboard = () => {
   const [userData, setUserData] = useState(null);
   const [eligibility, setEligibility] = useState(null);
   const [history, setHistory] = useState([]);
+  const [myRequests, setMyRequests] = useState([]);
+  const [notifications, setNotifications] = useState([]);
   
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('profile');
 
-  const [form, setForm] = useState({ name: '', blood_group: '', contact: '', last_donation_date: '' });
+  const [form, setForm] = useState({ name: '', blood_group: '', contact: '' });
   const [donationForm, setDonationForm] = useState({ quantity: 350, donation_date: '' });
   const [requestForm, setRequestForm] = useState({ blood_group: 'O+', quantity: 1, urgency_level: 'MEDIUM' });
 
@@ -30,10 +32,12 @@ const DonorDashboard = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [profileRes, eligRes, histRes] = await Promise.all([
+      const [profileRes, eligRes, histRes, myReqRes, notifRes] = await Promise.all([
         api.get('/users/profile'),
         api.get('/donor/eligibility'),
-        api.get('/donation/history')
+        api.get('/donation/history'),
+        api.get('/request/my-requests').catch(() => ({ data: { data: [] } })),
+        api.get('/notifications').catch(() => ({ data: { data: [] } }))
       ]);
 
       const data = profileRes.data.data;
@@ -41,14 +45,13 @@ const DonorDashboard = () => {
       setUserData(data.user);
       setEligibility(eligRes.data.eligible);
       setHistory(histRes.data.data);
+      setMyRequests(myReqRes.data.data || []);
+      setNotifications(notifRes.data.data || []);
 
       setForm({
         name: data.user?.name || '',
         blood_group: data.profile?.blood_group || 'O+',
         contact: data.profile?.contact || '',
-        last_donation_date: data.profile?.last_donation_date
-          ? data.profile.last_donation_date.split('T')[0]
-          : '',
       });
     } catch (err) {
       toast.error('Could not load dashboard data.');
@@ -71,7 +74,6 @@ const DonorDashboard = () => {
         name: form.name || undefined,
         blood_group: form.blood_group,
         contact: form.contact || undefined,
-        last_donation_date: form.last_donation_date || undefined,
       });
       setProfile(data.data.profile);
       setUserData((p) => ({ ...p, name: form.name || p.name }));
@@ -103,8 +105,29 @@ const DonorDashboard = () => {
       await api.post('/request/create', requestForm);
       toast.success('Blood request created successfully.');
       setRequestForm({ blood_group: 'O+', quantity: 1, urgency_level: 'MEDIUM' });
+      fetchData();
+      setActiveTab('my_requests');
     } catch (err) {
       toast.error('Failed to create blood request.');
+    }
+  };
+
+  const handleRevoke = async (id) => {
+    try {
+      await api.put(`/request/revoke/${id}`);
+      toast.success('Request revoked.');
+      fetchData();
+    } catch (err) {
+      toast.error('Failed to revoke request.');
+    }
+  };
+
+  const handleReadNotification = async (id) => {
+    try {
+      await api.put(`/notifications/read/${id}`);
+      fetchData();
+    } catch (err) {
+      toast.error('Failed to mark notification as read.');
     }
   };
 
@@ -163,10 +186,14 @@ const DonorDashboard = () => {
                 </div>
               </div>
 
-              <div className="dash-tabs" style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
+              <div className="dash-tabs" style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem', overflowX: 'auto' }}>
                 <button className={`btn btn-ghost ${activeTab === 'profile' ? 'active' : ''}`} onClick={() => setActiveTab('profile')}>Profile</button>
                 <button className={`btn btn-ghost ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}>Donation History</button>
+                <button className={`btn btn-ghost ${activeTab === 'my_requests' ? 'active' : ''}`} onClick={() => setActiveTab('my_requests')}>My Requests</button>
                 <button className={`btn btn-ghost ${activeTab === 'request' ? 'active' : ''}`} onClick={() => setActiveTab('request')}>Create Request</button>
+                <button className={`btn btn-ghost ${activeTab === 'notifications' ? 'active' : ''}`} onClick={() => setActiveTab('notifications')}>
+                  Notifications {notifications.filter(n => n.status === 'UNREAD').length > 0 && <span style={{ background: 'var(--red)', color: 'white', borderRadius: '50%', padding: '0.1rem 0.4rem', fontSize: '0.7rem', marginLeft: '0.3rem' }}>{notifications.filter(n => n.status === 'UNREAD').length}</span>}
+                </button>
               </div>
 
               {activeTab === 'profile' && (
@@ -206,10 +233,6 @@ const DonorDashboard = () => {
                         <div className="form-group">
                           <label className="form-label">Contact</label>
                           <input type="tel" name="contact" className="form-input" value={form.contact} onChange={handleChange} />
-                        </div>
-                        <div className="form-group">
-                          <label className="form-label">Last Donation Date</label>
-                          <input type="date" name="last_donation_date" className="form-input" value={form.last_donation_date} onChange={handleChange} />
                         </div>
                         <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
                           <button type="submit" className="btn btn-primary" disabled={saving}>Save</button>
@@ -271,6 +294,46 @@ const DonorDashboard = () => {
                 </div>
               )}
 
+              {activeTab === 'my_requests' && (
+                <div className="panel">
+                  <div className="panel-header">
+                    <span className="panel-title">My Request History</span>
+                  </div>
+                  <div style={{ padding: '1.5rem' }}>
+                    {myRequests.length === 0 ? <p>You haven't created any requests yet.</p> : (
+                      <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                            <th style={{ padding: '0.5rem' }}>ID</th>
+                            <th style={{ padding: '0.5rem' }}>Blood Group</th>
+                            <th style={{ padding: '0.5rem' }}>Urgency</th>
+                            <th style={{ padding: '0.5rem' }}>Status</th>
+                            <th style={{ padding: '0.5rem' }}>Date</th>
+                            <th style={{ padding: '0.5rem' }}>Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {myRequests.map(req => (
+                            <tr key={req._id} style={{ borderBottom: '1px solid var(--border)' }}>
+                              <td style={{ padding: '0.5rem', fontSize: '0.85rem' }}>{req.requestId}</td>
+                              <td style={{ padding: '0.5rem', fontWeight: 'bold', color: 'var(--red)' }}>{req.blood_group}</td>
+                              <td style={{ padding: '0.5rem' }}>{req.urgency_level}</td>
+                              <td style={{ padding: '0.5rem' }}>{req.status}</td>
+                              <td style={{ padding: '0.5rem' }}>{new Date(req.request_date).toLocaleDateString()}</td>
+                              <td style={{ padding: '0.5rem' }}>
+                                {req.status === 'OPEN' && (
+                                  <button onClick={() => handleRevoke(req._id)} className="btn btn-sm btn-outline" style={{ color: 'var(--red)', borderColor: 'var(--red)' }}>Revoke</button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {activeTab === 'request' && (
                 <div className="panel">
                   <div className="panel-header">
@@ -298,6 +361,31 @@ const DonorDashboard = () => {
                     </div>
                     <button type="submit" className="btn btn-primary" style={{ marginTop: '1rem' }}>Submit Request</button>
                   </form>
+                </div>
+              )}
+
+              {activeTab === 'notifications' && (
+                <div className="panel">
+                  <div className="panel-header">
+                    <span className="panel-title">Notifications</span>
+                  </div>
+                  <div style={{ padding: '1.5rem' }}>
+                    {notifications.length === 0 ? <p>No notifications.</p> : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                        {notifications.map(notif => (
+                          <div key={notif._id} style={{ padding: '1rem', border: '1px solid var(--border)', borderRadius: '8px', backgroundColor: notif.status === 'UNREAD' ? 'var(--bg-2)' : 'transparent' }}>
+                            <p style={{ margin: '0 0 0.5rem 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontWeight: notif.status === 'UNREAD' ? 'bold' : 'normal' }}>{notif.message}</span>
+                              {notif.status === 'UNREAD' && (
+                                <button onClick={() => handleReadNotification(notif._id)} className="btn btn-sm btn-outline">Mark as Read</button>
+                              )}
+                            </p>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-3)' }}>{new Date(notif.createdAt).toLocaleString()}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </>
