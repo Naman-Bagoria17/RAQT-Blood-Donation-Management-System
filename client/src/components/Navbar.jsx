@@ -29,7 +29,7 @@ const Navbar = () => {
                 fill="rgba(255,255,255,0.10)"
               />
             </svg>
-            <span className="brand-name">Blood<span>Connect</span></span>
+            <span className="brand-name">RAQT</span>
           </div>
         </Link>
 

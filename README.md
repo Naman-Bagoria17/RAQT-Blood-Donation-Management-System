@@ -1,4 +1,4 @@
-# 🩸 BloodConnect — Blood Donation Management System (Phase 1)
+# 🩸 RAQT — Blood Donation Management System (Phase 1)
 
 A full-stack MERN application connecting blood donors with hospitals.
 Built with **MongoDB, Express.js, React (Vite), and Node.js**.

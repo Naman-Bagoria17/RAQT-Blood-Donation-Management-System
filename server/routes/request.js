@@ -3,6 +3,7 @@ const router = express.Router();
 const BloodRequest = require('../models/BloodRequest');
 const Notification = require('../models/Notification');
 const DoctorProfile = require('../models/DoctorProfile');
+const DonorProfile = require('../models/DonorProfile');
 const DonationRecord = require('../models/DonationRecord');
 const User = require('../models/User');
 const { protect } = require('../middleware/auth');
@@ -13,7 +14,7 @@ const sendEmail = require('../utils/sendEmail');
 // POST /api/request/create
 // Create a new blood request (can be done by Donor or Doctor)
 // ─────────────────────────────────────────────────────────────
-router.post('/create', protect, async (req, res) => {
+router.post('/create', protect, authorize('doctor'), async (req, res) => {
   try {
     const { blood_group, quantity, urgency_level } = req.body;
 
@@ -88,7 +89,7 @@ router.get('/all', protect, authorize('doctor'), async (req, res) => {
 // GET /api/request/my-requests
 // View all requests created by the logged in user
 // ─────────────────────────────────────────────────────────────
-router.get('/my-requests', protect, async (req, res) => {
+router.get('/my-requests', protect, authorize('doctor'), async (req, res) => {
   try {
     const requests = await BloodRequest.find({ requester: req.user.id })
       .populate('selected_donor', 'name email')
@@ -109,7 +110,7 @@ router.get('/my-requests', protect, async (req, res) => {
 // PUT /api/request/revoke/:id
 // Revoke an OPEN request
 // ─────────────────────────────────────────────────────────────
-router.put('/revoke/:id', protect, async (req, res) => {
+router.put('/revoke/:id', protect, authorize('doctor'), async (req, res) => {
   try {
     const request = await BloodRequest.findOne({ _id: req.params.id, requester: req.user.id });
     
@@ -215,6 +216,13 @@ router.put('/complete/:id', protect, authorize('doctor'), async (req, res) => {
       hospital: req.user.id,
       quantity: request.quantity > 50 ? request.quantity : request.quantity * 350,
     });
+
+    // Update Donor Profile to make them ineligible
+    const donorProfile = await DonorProfile.findOne({ user: request.selected_donor });
+    if (donorProfile) {
+      donorProfile.last_donation_date = Date.now();
+      await donorProfile.save();
+    }
 
     res.status(200).json({
       success: true,
